@@ -1,10 +1,10 @@
 # NTFSafe
 
-NTFSafe is a small Python/PySide6 preflight scanner for checking whether a local folder tree can be copied to an NTFS drive without later discovering that some files/folders are unusable on the intended operating system.
+NTFSafe is a small Python/PySide6 preflight scanner for checking whether a local folder tree can be copied to an NTFS drive without later discovering that some files/folders are unusable on the intended operating system (Windows on NTFS, or Mac on NTFS). It 
 
-It is read-first and conservative. It does **not** copy files, does **not** bulk-rename files, and does **not** modify file contents. The GUI has one manual convenience feature: you can select a problematic item and press **F2** or **Rename selected…** to rename that one source file/folder in place.
-
-**Copyright Frieder Simon.**
+- offers different sets of checks depending on what your target is. It can operate both in GUI mode and in CLI mode.
+- is read-first and conservative.
+-  does **not** copy files, does **not** bulk-rename files, and does **not** modify file contents. The GUI has one manual convenience feature: you can select a found problematic item and press **F2** or **Rename selected** to rename that one source file/folder in place.
 
 ## Quick start with uv
 
@@ -472,5 +472,8 @@ GitHub Actions runs these checks on pushes and pull requests. There is not yet a
 - Microsoft filesystem functionality comparison / NTFS limits: <https://learn.microsoft.com/en-us/windows/win32/fileio/filesystem-functionality-comparison>
 - Microsoft Windows filename rules: <https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file>
 - Microsoft maximum path length: <https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation>
+
+
+**Copyright Frieder Simon.**
 - Linux NTFS layout / POSIX namespace note: <https://kernel.googlesource.com/pub/scm/linux/kernel/git/torvalds/linux/+/865730eec5435ce40a5dc3c615077d04c8f95098/fs/ntfs/layout.h>
 - CrossRename: <https://github.com/Jemeni11/CrossRename>
