@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import logging
 import os
 import platform
 import shlex
@@ -1107,7 +1108,8 @@ def edited_record_to_issue(record: EditedRecord) -> Issue:
         detail=(
             f"Renamed in this app from {safe_display(record.old_name)!r} to "
             f"{safe_display(record.new_name)!r} at {record.edited_at}. This row is shown because "
-            "Show edited items is enabled; it is not counted as an unresolved compatibility problem."
+            "Show edited items is enabled; it is not counted as an unresolved compatibility problem. "
+            "Edited rows are cleared when a new scan starts."
         ),
         check_id="user.edited_item",
     )
@@ -1192,7 +1194,7 @@ def open_with_default_app(path: str) -> bool:
 
 
 def reveal_in_file_manager(path: str) -> bool:
-    """Best effort reveal/select. Uses OS-specific helpers; falls back to opening parent folder."""
+    """Best effort reveal/select. Uses OS-specific helpers; logs exceptions and returns False."""
     system = platform.system().lower()
     try:
         if system == "windows":
@@ -1201,7 +1203,7 @@ def reveal_in_file_manager(path: str) -> bool:
             subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
             return True
         if system == "darwin":
-            subprocess.Popen(["open", "-R", path])
+            subprocess.Popen(["/usr/bin/open", "-R", path])
             return True
         # Linux/Unix: DBus FileManager1 is the closest cross-desktop reveal API, but
         # it is not universally available. Fall back to opening the parent folder.
@@ -1209,7 +1211,9 @@ def reveal_in_file_manager(path: str) -> bool:
         if parent:
             return open_with_default_app(parent)
     except Exception:
-        pass
+        logging.getLogger(__name__).warning(
+            "Could not reveal %r in the file manager", path, exc_info=True
+        )
     return False
 
 
@@ -1518,13 +1522,7 @@ def run_gui() -> int:
             self.issues = list(issues)
             self.edited_paths = set(edited_paths or set())
             self.items = group_problem_items(self.issues, self.edited_paths)
-            if self.sort_column >= 0:
-                self._sort_in_place()
-            else:
-                # Even before the user sorts, keep multi-problem rows at the end.
-                singles = [item for item in self.items if not item.is_multi_problem]
-                multis = [item for item in self.items if item.is_multi_problem]
-                self.items = singles + multis
+            self._sort_in_place()
             self.endResetModel()
 
         def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
@@ -1562,9 +1560,9 @@ def run_gui() -> int:
             if column == 3:
                 return f"{safe_display(issue.name)}\n{safe_display(issue.absolute_path)}"
             if column == 0 and item.is_multi_problem:
-                return "This item has more than one problem. Multi-problem rows stay pinned at the end and are not sorted with single-problem rows."
+                return "This item has more than one problem. Multi-problem rows stay pinned at the end in A-Z Problem order, independently of column sorting."
             if item.edited:
-                return "This item was renamed from inside the app during this session. Use the Show edited items checkbox to show or hide edited rows."
+                return "This item was renamed from inside the app since the last scan. Use the Show edited items checkbox to show or hide edited rows. Starting a new scan clears these rows and checks the items again."
             return self.display_value(item, column)
 
         def flags(self, index: QModelIndex):
@@ -1597,23 +1595,23 @@ def run_gui() -> int:
             self.layoutChanged.emit()
 
         def _sort_in_place(self) -> None:
-            if self.sort_column < 0:
-                return
-            reverse = self.sort_order == Qt.SortOrder.DescendingOrder
-            col = self.sort_column
             single_problem_items = [item for item in self.items if not item.is_multi_problem]
             multi_problem_items = [item for item in self.items if item.is_multi_problem]
-            single_problem_items.sort(
+            if self.sort_column >= 0:
+                single_problem_items.sort(
+                    key=lambda item: (
+                        self.display_value(item, self.sort_column).casefold(),
+                        safe_display(item.primary_issue.absolute_path).casefold(),
+                        problem_text_for_item(item).casefold(),
+                    ),
+                    reverse=self.sort_order == Qt.SortOrder.DescendingOrder,
+                )
+            multi_problem_items.sort(
                 key=lambda item: (
-                    self.display_value(item, col).casefold(),
-                    safe_display(item.primary_issue.absolute_path).casefold(),
                     problem_text_for_item(item).casefold(),
-                ),
-                reverse=reverse,
+                    safe_display(item.primary_issue.absolute_path).casefold(),
+                )
             )
-            # Multi-problem rows deliberately keep their original scan/report order
-            # and are pinned after the sorted single-problem rows.
-            multi_problem_items.sort(key=lambda item: item.original_order)
             self.items = single_problem_items + multi_problem_items
 
         def item_at(self, row: int) -> Optional[ProblemItem]:
@@ -1678,7 +1676,7 @@ def run_gui() -> int:
                         elif index.column() == 3:
                             tooltip = f"{safe_display(item.primary_issue.name)}\n{safe_display(item.primary_issue.absolute_path)}"
                         elif index.column() == 0 and item.is_multi_problem:
-                            tooltip = "This item has more than one problem. Multi-problem rows stay pinned at the end and are not sorted with single-problem rows."
+                            tooltip = model.tooltip_for(item, index.column())
                         elif truncated:
                             tooltip = text
                     elif truncated:
@@ -1847,7 +1845,7 @@ def run_gui() -> int:
             action_row.addWidget(self.rename_btn)
             self.show_edited_check = QCheckBox("Show edited items")
             self.show_edited_check.setChecked(True)
-            self.show_edited_check.setToolTip("Show rows for files/folders renamed inside this app. Edited rows have a light orange background and are not counted as unresolved problems.")
+            self.show_edited_check.setToolTip("Show rows for files/folders renamed inside this app since the last scan. Edited rows have a light orange background and are not counted as unresolved problems. Starting a new scan clears these rows and checks the items again.")
             self.show_edited_check.toggled.connect(lambda _checked: self.refresh_table_preserving_view())
             action_row.addWidget(self.show_edited_check)
             self.copy_paths_btn = QPushButton("Copy selected path(s)")
@@ -1875,6 +1873,16 @@ def run_gui() -> int:
             self.legend_label = QLabel("")
             self.legend_label.setWordWrap(True)
             root_layout.addWidget(self.legend_label)
+
+            self.multi_problem_warning_label = QLabel(
+                "Warning: Some files/folders have multiple problems. Review all problems in the bold rows."
+            )
+            warning_font = self.multi_problem_warning_label.font()
+            warning_font.setBold(True)
+            self.multi_problem_warning_label.setFont(warning_font)
+            self.multi_problem_warning_label.setWordWrap(True)
+            self.multi_problem_warning_label.setVisible(False)
+            root_layout.addWidget(self.multi_problem_warning_label)
 
             self.table = IssueTableView()
             self.table.setModel(self.model)
@@ -1944,7 +1952,7 @@ def run_gui() -> int:
             return {record.new_absolute_path for record in self.edited_records.values()}
 
         def display_issues(self) -> list[Issue]:
-            """Return issues plus optional session-local edited rows for the table only."""
+            """Return issues plus optional scan-local edited rows for the table only."""
             show_edited = bool(getattr(self, "show_edited_check", None) is None or self.show_edited_check.isChecked())
             edited_paths = self.edited_path_set()
             visible: list[Issue] = []
@@ -1959,24 +1967,39 @@ def run_gui() -> int:
                         visible.append(edited_record_to_issue(record))
             return visible
 
-        def refresh_table_preserving_view(self, preserve_scroll: bool = True) -> None:
-            """Refresh model rows without jumping back to the top after inline renames."""
+        def refresh_table_preserving_view(self, preserve_scroll: bool = True, *, focus_path: Optional[str] = None) -> None:
+            """Refresh rows, optionally restoring focus to a renamed item."""
             table = getattr(self, "table", None)
             vbar = table.verticalScrollBar() if table is not None else None
             hbar = table.horizontalScrollBar() if table is not None else None
             old_v = vbar.value() if preserve_scroll and vbar is not None else 0
             old_h = hbar.value() if preserve_scroll and hbar is not None else 0
+            current_column = table.currentIndex().column() if table is not None else -1
+            had_focus = table is not None and table.hasFocus()
             self.model.set_issues(self.display_issues(), self.edited_path_set())
+            self.multi_problem_warning_label.setVisible(
+                any(item.is_multi_problem for item in self.model.items)
+            )
             self.refresh_table_scrollbar_metrics()
 
             if preserve_scroll and table is not None:
-                def restore_scroll() -> None:
+                def restore_view() -> None:
+                    # Restore selection after Qt has finished closing the inline editor.
+                    if focus_path is not None:
+                        for row, item in enumerate(self.model.items):
+                            if item.primary_issue.absolute_path == focus_path:
+                                table.setCurrentIndex(self.model.index(
+                                    row, current_column if current_column >= 0 else 3
+                                ))
+                                break
+                        if had_focus:
+                            table.setFocus(Qt.FocusReason.OtherFocusReason)
                     if vbar is not None:
                         vbar.setValue(min(old_v, vbar.maximum()))
                     if hbar is not None:
                         hbar.setValue(min(old_h, hbar.maximum()))
                     self.refresh_table_scrollbar_metrics()
-                QTimer.singleShot(0, restore_scroll)
+                QTimer.singleShot(0, restore_view)
 
         def on_options_toggled(self, checked: bool) -> None:
             self.options_content.setVisible(checked)
@@ -2038,8 +2061,8 @@ def run_gui() -> int:
             self.collision_check.setVisible(profile in (PROFILE_WINDOWS, PROFILE_MACOS))
             self.legend_label.setText(
                 f"⛔ cannot be copied as a normal NTFS object  •  {os_text}  •  ⚠️ portable-metadata/path warning\n"
-                "🟧/bold row = this file/folder has more than one problem. Multi-problem rows are always kept at the end and are not reordered when you sort a column.\n"
-                "✏️/light-orange row = renamed in this app during this session; toggle Show edited items to hide/show these rows."
+                "🟧/bold row = this file/folder has more than one problem. These rows stay at the end in A-Z Problem order, independently of column sorting.\n"
+                "✏️/light-orange row = renamed in this app since the last scan; toggle Show edited items to hide/show these rows. Starting a new scan clears the edited state."
             )
             if getattr(self, "summary", None):
                 self.issues = []
@@ -2133,10 +2156,37 @@ def run_gui() -> int:
                 issues, it is counted once under its most serious class, so the three emoji counts
                 add up to the total problematic-item count. The table shows one row per problematic
                 file/folder; the <b>Problem</b> column lists all problems for that item. Rows marked
-                with the orange <b>🟧</b> multi-problem marker are shown in bold across the whole row, pinned at the end, and are not
-                reordered when you sort a column. Inside a multi-problem row, intrinsic name/content problems such as illegal
+                with the orange <b>🟧</b> multi-problem marker are shown in bold across the whole row and pinned at the end
+                in case-insensitive A-Z order by their displayed <b>Problem</b> text, independently of column sorting.
+                A bold warning below the legend appears whenever multi-problem rows are visible.
+                Inside a multi-problem row, intrinsic name/content problems such as illegal
                 characters, reserved names, non-NFC Unicode, symlinks, hardlinks, or special-file semantics are listed before
                 structural depth/path/component-length problems, so concrete rename/fix actions appear first.
+                </p>
+                <h2>Manual renames and edited rows</h2>
+                <p>
+                Select a file or folder and press <b>F2</b>, or click <b>Rename selected…</b>,
+                to edit its <b>Name</b>. Press <b>Enter</b> to rename the actual source item
+                in place. This is a manual, one-item operation, not a bulk sanitizer.
+                The table keeps its scroll position and immediately updates the row text.
+                With <b>Show edited items</b> enabled, the renamed row stays selected and
+                focused, so <b>Up</b>/<b>Down</b> can select the previous/next item.
+                </p>
+                <p>
+                Renamed rows have a <b>✏️</b> marker and a light-orange background.
+                <b>Show edited items</b> hides or shows items renamed since the last scan.
+                The marker does not prove that the rename fixed every problem:
+                run <b>Scan</b> again to refresh the findings and counts.
+                Edited-item placeholders are display-only; they are not counted as
+                unresolved problems or exported as findings in CSV/JSON.
+                </p>
+                <p>
+                Starting a new scan clears all edited markers and placeholders, whether
+                you scan the same folder or a different one. Every item in the selected
+                folder is checked again, including previously renamed files and folders.
+                Items with no remaining findings disappear from the results. Items with
+                remaining findings appear as normal problem rows without the edited
+                highlight, even when <b>Show edited items</b> is unchecked.
                 </p>
                 <h2>Destination root</h2>
                 <p>
@@ -2175,11 +2225,11 @@ def run_gui() -> int:
                 </p>
                 <h2>Useful controls</h2>
                 <ul>
-                  <li><b>F2</b> or <b>Rename selected…</b>: rename the selected source item in place. After Enter, the table preserves its scroll position.</li>
-                  <li><b>Show edited items</b>: show/hide rows for items renamed during this session. Edited rows are marked with ✏️ and a light-orange background and are not counted as unresolved problems.</li>
+                  <li><b>F2</b> or <b>Rename selected…</b>: rename the selected source item in place. After Enter, the table preserves its scroll position and keeps the renamed row selected and focused when edited items are shown.</li>
+                  <li><b>Show edited items</b>: show/hide temporary edited rows until the next scan; see Manual renames and edited rows above.</li>
                   <li><b>Hover over Location</b>: show the full absolute path only.</li>
                   <li><b>Hover over Problem</b>: show all problems for that item and their detailed explanations.</li>
-                  <li><b>Click a column header</b>: sort single-problem rows lexicographically by that column; the header shows an up/down sort arrow. Multi-problem rows stay at the end.</li>
+                  <li><b>Click a column header</b>: sort single-problem rows lexicographically by that column; the header shows an up/down sort arrow. Multi-problem rows stay at the end in A-Z Problem order.</li>
                   <li><b>Double-click Location</b>: open the parent folder in the file browser.</li>
                   <li><b>Export CSV / Export JSON</b>: save reports for later review.</li>
                   <li><b>Open selected / Show location</b>: jump to the problematic item.</li>
@@ -2219,6 +2269,7 @@ def run_gui() -> int:
             if not src or not os.path.isdir(src):
                 QMessageBox.warning(self, APP_NAME, "Please choose an existing source folder.")
                 return
+            self.edited_records.clear()
             self.issues = []
             self.summary = {}
             self.refresh_table_preserving_view(preserve_scroll=False)
@@ -2381,9 +2432,16 @@ def run_gui() -> int:
                 relative_path=new_rel,
                 edited_at=time.strftime("%Y-%m-%d %H:%M:%S"),
             ), old_abs=old_abs, new_abs=new_abs, old_rel=old_rel, new_rel=new_rel)
-            self.refresh_table_preserving_view(preserve_scroll=True)
+            def refresh_renamed_item() -> None:
+                self.refresh_table_preserving_view(preserve_scroll=True, focus_path=new_abs)
+
+            if self.table.state() == QAbstractItemView.State.EditingState:
+                # Resetting the model during commitData invalidates the active editor.
+                QTimer.singleShot(0, refresh_renamed_item)
+            else:
+                refresh_renamed_item()
             self.update_count_label()
-            self.statusBar().showMessage("Renamed. The table kept its scroll position; use Show edited items to hide/show renamed rows. Run Scan again to refresh which issues remain.")
+            self.statusBar().showMessage("Renamed. The table kept its scroll position and focus; use Show edited items to hide/show renamed rows. Run Scan again to refresh which issues remain.")
             return True
 
         def _record_edited_item(self, record: EditedRecord, *, old_abs: str, new_abs: str, old_rel: str, new_rel: str) -> None:
