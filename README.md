@@ -1,5 +1,40 @@
 # NTFSafe
 
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/ba6135b4182245519c04d12bb376a0d3)](https://app.codacy.com/gh/friederrr/ntfsafe/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Tests](https://img.shields.io/github/actions/workflow/status/friederrr/ntfsafe/quality.yml?label=tests)](https://github.com/friederrr/ntfsafe/actions/workflows/quality.yml)
+
+## Table of contents
+
+- [At-a-glance comparison](#at-a-glance-comparison)
+- [Drives and filesystems you can scan](#drives-and-filesystems-you-can-scan)
+- [Scan speed](#scan-speed)
+- [Quick start with uv](#quick-start-with-uv)
+- [Project layout](#project-layout)
+- [Compatibility profiles](#compatibility-profiles)
+- [GUI usage](#gui-usage)
+- [Destination prefix for path-length estimate](#destination-prefix-for-path-length-estimate)
+- [Issue classes and counts](#issue-classes-and-counts)
+  - [Ordering of multiple problems in one row](#ordering-of-multiple-problems-in-one-row)
+  - [Manual renames and edited rows](#manual-renames-and-edited-rows)
+- [What the scanner checks](#what-the-scanner-checks)
+  - [Pure NTFS checks](#pure-ntfs-checks)
+  - [Windows-profile checks](#windows-profile-checks)
+  - [macOS-profile checks](#macos-profile-checks)
+  - [Cross-platform portability checks](#cross-platform-portability-checks)
+  - [Profile check audit](#profile-check-audit)
+- [Renaming from the GUI](#renaming-from-the-gui)
+- [Open/show behavior](#openshow-behavior)
+- [Wayland / Qt warning](#wayland--qt-warning)
+- [CLI usage](#cli-usage)
+- [Distribution](#distribution)
+- [What it does not check](#what-it-does-not-check)
+- [Comparison with CrossRename and ntfs-3g](#comparison-with-crossrename-and-ntfs-3g)
+  - [Safety checks: NTFSafe vs CrossRename vs ntfs-3g](#safety-checks-ntfsafe-vs-crossrename-vs-ntfs-3g)
+- [GUI appearance](#gui-appearance)
+- [Development checks](#development-checks)
+- [References](#references)
+
 ## At-a-glance comparison
 
 | Check / feature | NTFSafe | CrossRename | ntfs-3g |
