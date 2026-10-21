@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#   "PySide6>=6.7,<7",
+#   "PySide6>=6.7,!=6.12.0,<7",
 # ]
 # ///
 """

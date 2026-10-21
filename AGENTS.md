@@ -74,6 +74,10 @@ documentation and detailed compatibility assumptions.
 
 - PySide6 is required for GUI work and GUI tests. Keep Qt imports lazy so the
   command-line scanner and core module remain usable without importing PySide6.
+- Exclude PySide6 6.12.0 in both project and standalone-script dependencies:
+  `Signal.emit()` loses references to Python's `True` object on Python 3.10,
+  causing native shutdown aborts even when test assertions pass. Preserve the
+  subprocess exit regression in [test_qt_runtime.py](tests/test_qt_runtime.py).
 - Ubuntu/Debian GUI tests also need the native `libegl1` and `libgl1` packages,
   even with `QT_QPA_PLATFORM=offscreen`. CI installs them before the Python
   dependencies; preserve that step. A missing `libEGL.so.1` is an environment
@@ -104,7 +108,8 @@ across several implementation modules:
 
 Tests live in [tests/](tests/). GUI regression tests are in
 [test_gui_results.py](tests/test_gui_results.py); desktop integration tests are in
-[test_file_manager.py](tests/test_file_manager.py). Keep
+[test_file_manager.py](tests/test_file_manager.py), and native Qt shutdown is
+covered by [test_qt_runtime.py](tests/test_qt_runtime.py). Keep
 [tests/__init__.py](tests/__init__.py) so project-root unittest discovery works.
 
 ## Extending the project
@@ -163,6 +168,9 @@ Tests live in [tests/](tests/). GUI regression tests are in
   GUI tests set `QT_QPA_PLATFORM=offscreen` before importing Qt and capture the
   window by patching `QApplication.exec`; extend that pattern instead of opening
   interactive windows in automation.
+- Validate Qt changes on CI's Python 3.10, not only a newer local interpreter.
+  Confirm the test command exits with status `0`; unittest reporting `OK` does
+  not rule out a subsequent native crash during process shutdown.
 - Before submitting code changes, run the checks defined in
   [.github/workflows/quality.yml](.github/workflows/quality.yml):
 

@@ -103,7 +103,7 @@ The script contains inline dependency metadata, so `uv` creates or reuses an iso
 If PySide6 is still not found, use the explicit dependency fallback:
 
 ```bash
-uv run --with 'PySide6>=6.7,<7' python src/ntfsafe.py
+uv run --with 'PySide6>=6.7,!=6.12.0,<7' python src/ntfsafe.py
 ```
 
 Avoid this form for the standalone script unless you are deliberately running from a project environment that already has PySide6:
@@ -552,6 +552,14 @@ Qt still needs these libraries when tests use `QT_QPA_PLATFORM=offscreen`.
 In particular, `libegl1` provides `libEGL.so.1`; without it, importing
 `PySide6.QtTest` can fail before any GUI test runs. The GitHub Actions workflow
 installs these system packages separately from the Python dependencies.
+
+The dependency constraints exclude **PySide6 6.12.0**: its `Signal.emit()` can
+corrupt reference counts on Python 3.10 and abort the process during shutdown,
+even after unittest reports `OK`. Keep the project and standalone-script
+constraints aligned, and use `uv sync --locked --group dev` to restore the
+tested versions. The Qt runtime regression test checks signal emission in a
+subprocess and requires a clean exit, not just successful assertions. Validate
+Qt changes with CI's Python 3.10 as well as any newer local interpreter.
 
 Install the locked project and development dependencies, then run the local checks:
 
