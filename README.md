@@ -541,6 +541,18 @@ Further improvements that would make it feel more like Nautilus would be a custo
 
 ## Development checks
 
+On Ubuntu/Debian, install Qt's native runtime libraries before running GUI tests:
+
+```bash
+sudo apt-get update
+sudo apt-get install --yes --no-install-recommends libegl1 libgl1
+```
+
+Qt still needs these libraries when tests use `QT_QPA_PLATFORM=offscreen`.
+In particular, `libegl1` provides `libEGL.so.1`; without it, importing
+`PySide6.QtTest` can fail before any GUI test runs. The GitHub Actions workflow
+installs these system packages separately from the Python dependencies.
+
 Install the locked project and development dependencies, then run the local checks:
 
 ```bash

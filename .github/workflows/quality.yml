@@ -28,6 +28,11 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install Qt system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libegl1 libgl1
+
       - name: Install locked dependencies
         run: uv sync --locked --group dev
 

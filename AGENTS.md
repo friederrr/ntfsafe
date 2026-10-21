@@ -74,6 +74,11 @@ documentation and detailed compatibility assumptions.
 
 - PySide6 is required for GUI work and GUI tests. Keep Qt imports lazy so the
   command-line scanner and core module remain usable without importing PySide6.
+- Ubuntu/Debian GUI tests also need the native `libegl1` and `libgl1` packages,
+  even with `QT_QPA_PLATFORM=offscreen`. CI installs them before the Python
+  dependencies; preserve that step. A missing `libEGL.so.1` is an environment
+  failure during import, not a reason to skip GUI tests. See the
+  [README development checks](README.md#development-checks) for setup commands.
 - `uv run --script` reads the script's inline dependency metadata. In a prepared
   development environment, use `uv run --locked python ...`; do not assume that
   `uv run python ...` processes inline script metadata.
